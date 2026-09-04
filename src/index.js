@@ -7,8 +7,9 @@ import { PokerTable, BOT_VERSION } from './table.js';
 export { PokerTable };
 
 export const BOT_COMMANDS = [
-  { command: 'ludoman_spin', description: 'Раздача в техасский холдем: 30 сек на вход' },
-  { command: 'ludoman_top', description: 'Рейтинг по фишкам' },
+  { command: 'ludoman_spin', description: 'Раздача: сбор до 30 сек, потом карты сами' },
+  { command: 'ludoman_duel', description: 'Вызвать конкретного игрока на дуэль 1 на 1' },
+  { command: 'ludoman_top', description: 'Кто чаще побеждал' },
   { command: 'ludoman_cancel', description: 'Отменить текущую раздачу' },
   { command: 'bot_version', description: 'Какая версия бота работает' }
 ];

@@ -39,7 +39,7 @@ echo "→ Регистрирую вебхук $URL и команды…"
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setWebhook" -H 'content-type: application/json' \
   -d "{\"url\":\"$URL\",\"secret_token\":\"$WEBHOOK_SECRET\",\"allowed_updates\":[\"message\",\"callback_query\"],\"drop_pending_updates\":true}"; echo
 curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/setMyCommands" -H 'content-type: application/json' \
-  -d '{"commands":[{"command":"ludoman_spin","description":"Раздача в техасский холдем: 30 сек на вход"},{"command":"ludoman_top","description":"Рейтинг по фишкам"},{"command":"ludoman_cancel","description":"Отменить текущую раздачу"},{"command":"bot_version","description":"Какая версия бота работает"}]}'; echo
+  -d '{"commands":[{"command":"ludoman_spin","description":"Раздача: сбор до 30 сек, потом карты сами"},{"command":"ludoman_duel","description":"Вызвать конкретного игрока на дуэль 1 на 1"},{"command":"ludoman_top","description":"Кто чаще побеждал"},{"command":"ludoman_cancel","description":"Отменить текущую раздачу"},{"command":"bot_version","description":"Какая версия бота работает"}]}'; echo
 echo "→ Проверка:"
 curl -s "$URL/"; echo
 curl -s "https://api.telegram.org/bot$BOT_TOKEN/getWebhookInfo"; echo
