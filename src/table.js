@@ -4,15 +4,31 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-5';
+export const BOT_VERSION = '2026.09.04-6';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
 export const STREET_DELAY_MS = 4000; // пауза между улицами
+export const RIVER_DRAMA_MS = 6000; // барабанная дробь перед ривером
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
 
 const PHASE_TITLES = { preflop: 'Префлоп', flop: 'Флоп', turn: 'Тёрн', river: 'Ривер' };
+
+// Категории evaluateBest().score[0]: 0 старшая ... 4 стрит, 5 флеш, 6 фулл-хаус, 7 каре, 8-9 стрит-флеш/рояль
+function tableCommentary(maxCategory) {
+  if (maxCategory >= 8) return '🥶 На столе замаячил стрит-флеш — это будет история!';
+  if (maxCategory === 7) return '👀 О, у кого-то каре намечается!';
+  if (maxCategory === 6) return '😳 Фулл-хаус на подходе!';
+  if (maxCategory === 5) return '🌊 Пахнет флешем!';
+  return null;
+}
+
+function resultEmoji(category) {
+  if (category >= 5) return ' 🔥';
+  if (category === 0) return ' 💀';
+  return '';
+}
 
 function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -176,7 +192,7 @@ export class PokerTable {
       deadline: this.now() + JOIN_SECONDS * 1000,
       lastJoinAt: this.now(),
       players: [{ id: user.id, name: displayName(user), cards: [] }],
-      deck: [], board: [], chances: []
+      deck: [], board: [], chances: [], preflopChances: null
     };
     const sent = await this.sendHtml(chatId, this.renderLobby(game), this.lobbyKeyboard(game));
     if (!sent.ok) return null;
@@ -246,6 +262,14 @@ export class PokerTable {
       game.board.push(game.deck.pop());
       game.phase = 'turn';
     } else if (game.phase === 'turn') {
+      if (!game.riverDrama) {
+        game.riverDrama = true;
+        await this.saveGame(game);
+        await this.editHtml(game.chatId, game.messageId,
+          this.renderTable(game) + '\n\n🥁 <i>Барабанная дробь... ривер решит всё</i>', []);
+        await this.storage.setAlarm(this.now() + RIVER_DRAMA_MS);
+        return;
+      }
       game.board.push(game.deck.pop());
       game.phase = 'river';
     } else if (game.phase === 'river') {
@@ -254,6 +278,7 @@ export class PokerTable {
     }
 
     game.chances = winChances(game.players, game.board);
+    if (game.phase === 'preflop' && !game.preflopChances) game.preflopChances = game.chances.slice();
     await this.saveGame(game);
     await this.editHtml(game.chatId, game.messageId, this.renderTable(game), []);
     await this.storage.setAlarm(this.now() + STREET_DELAY_MS);
@@ -266,10 +291,18 @@ export class PokerTable {
       `🃏 Стол: ${game.board.length ? '<b>' + cardsToString(game.board) + '</b>' : '— (карты ещё не открыты)'}`,
       ''
     ];
+    let maxCategory = -1;
     game.players.forEach((p, i) => {
-      const hand = game.board.length >= 3 ? ' · ' + evaluateBest(p.cards.concat(game.board)).name : '';
+      let hand = '';
+      if (game.board.length >= 3) {
+        const best = evaluateBest(p.cards.concat(game.board));
+        hand = ' · ' + best.name;
+        if (best.score[0] > maxCategory) maxCategory = best.score[0];
+      }
       lines.push(`<b>${game.chances[i]}%</b> ${escapeHtml(p.name)}: ${cardsToString(p.cards)}${hand}`);
     });
+    const comment = tableCommentary(maxCategory);
+    if (comment) lines.push('', comment);
     return lines.join('\n');
   }
 
@@ -291,11 +324,12 @@ export class PokerTable {
       `🃏 Стол: <b>${cardsToString(game.board)}</b>`,
       ''
     ];
-    for (const r of result.results) {
-      const p = game.players.find(x => x.id === r.id);
-      const won = result.winners.includes(r.id);
-      lines.push(`${won ? '🏆' : '▫️'} ${escapeHtml(p.name)}: ${cardsToString(p.cards)} · ${r.best.name}`);
-    }
+    game.players.forEach((p, i) => {
+      const r = result.results.find(x => x.id === p.id);
+      const won = result.winners.includes(p.id);
+      const badbeat = !won && game.preflopChances && game.preflopChances[i] >= 80;
+      lines.push(`${won ? '🏆' : '▫️'} ${escapeHtml(p.name)}: ${cardsToString(p.cards)} · ${r.best.name}${resultEmoji(r.best.score[0])}${badbeat ? ' 😱 БЭДБИТ!' : ''}`);
+    });
     const winnerNames = result.winners.map(id => escapeHtml(game.players.find(p => p.id === id).name));
     lines.push('',
       result.winners.length > 1

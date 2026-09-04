@@ -120,25 +120,36 @@ await test('опоздавший не может присоединиться', 
   await click(99, 'j:1');
   assert.ok(last('answerCallbackQuery').text.includes('уже розданы'));
 });
-await test('улицы крутятся сами: флоп → тёрн → ривер в том же сообщении', async () => {
+await test('улицы крутятся сами: флоп → тёрн → барабанная дробь → ривер в том же сообщении', async () => {
   now += 4000; await table.alarm();
   assert.strictEqual(game().board.length, 3); assert.ok(last('editMessageText').text.includes('Флоп'));
   now += 4000; await table.alarm();
-  assert.strictEqual(game().board.length, 4);
+  assert.strictEqual(game().board.length, 4); assert.ok(last('editMessageText').text.includes('Тёрн'));
   now += 4000; await table.alarm();
+  assert.strictEqual(game().board.length, 4, 'дробь не открывает карту');
+  assert.strictEqual(game().phase, 'turn');
+  assert.ok(game().riverDrama);
+  assert.ok(last('editMessageText').text.includes('Барабанная дробь'));
+  assert.strictEqual(alarmAt, now + 6000, 'пауза перед ривером длиннее обычной');
+  now += 6000; await table.alarm();
   assert.strictEqual(game().board.length, 5);
   assert.strictEqual(game().phase, 'river');
   assert.strictEqual(last('editMessageText').message_id, 101);
   assert.ok(game().chances.some(c => c === 100) || game().chances.filter(c => c > 0).length > 1, 'на ривере шансы определены');
 });
-await test('вскрытие: победитель в статистике, игра очищается', async () => {
+await test('вскрытие: победитель в статистике, эмодзи по силе руки, игра очищается', async () => {
   const expected = P.showdown(game().players, game().board);
   now += 4000; await table.alarm();
   assert.strictEqual(game(), undefined);
   const stats = store.get('stats');
   for (const id of expected.winners) assert.strictEqual(stats[id].wins, 1);
   assert.strictEqual([1, 2, 3].reduce((s, id) => s + stats[id].hands, 0), 3);
-  assert.ok(last('editMessageText').text.includes('🏆'));
+  const text = last('editMessageText').text;
+  assert.ok(text.includes('🏆'));
+  expected.results.forEach(r => {
+    if (r.best.score[0] >= 5) assert.ok(text.includes('🔥'), 'ожидался огонь на сильной руке');
+    if (r.best.score[0] === 0) assert.ok(text.includes('💀'), 'ожидался череп на слабой руке');
+  });
 });
 await test('клик по старой раздаче — вежливый отказ', async () => {
   await click(1, 'j:1');
@@ -175,6 +186,31 @@ await test('шансы: на ривере ровно 100/0, ничья дели�
   const pl = [{ cards: P.parseCards('2♥ 3♦') }, { cards: P.parseCards('4♥ 5♦') }];
   assert.deepStrictEqual(P.winChances(pl, P.parseCards('A♠ K♥ Q♦ J♣ 10♠')), [50, 50]);
   assert.deepStrictEqual(P.winChances([{ cards: P.parseCards('A♠ A♥') }, { cards: P.parseCards('7♠ 2♦') }], P.parseCards('A♦ K♠ 9♣ 4♥ 3♥')), [100, 0]);
+});
+
+await test('комментарий бота: каре на борде подсвечивается в renderTable', () => {
+  const crafted = {
+    handNo: 99, phase: 'flop',
+    board: P.parseCards('K♠ K♥ K♦'),
+    players: [{ id: 1, name: 'Тестер', cards: P.parseCards('K♣ 2♦') }],
+    chances: [100]
+  };
+  assert.ok(table.renderTable(crafted).includes('каре намечается'));
+});
+await test('бэдбит: фаворит префлопа проигрывает — помечен в вскрытии', async () => {
+  const crafted = {
+    chatId: CHAT, messageId: 999, handNo: 98,
+    board: P.parseCards('2♦ 2♣ 5♠ 6♥ 9♦'),
+    players: [
+      { id: 1, name: 'Фаворит', cards: P.parseCards('A♠ A♥') },
+      { id: 2, name: 'Андердог', cards: P.parseCards('2♠ 2♥') }
+    ],
+    preflopChances: [85, 15]
+  };
+  await table.finishGame(crafted);
+  const text = last('editMessageText').text;
+  assert.ok(text.includes('Фаворит') && text.includes('😱 БЭДБИТ!'));
+  assert.ok(!text.match(/Андердог[^\\n]*БЭДБИТ/));
 });
 
 // ---------- 3. Worker ----------
