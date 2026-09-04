@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 W="./node_modules/.bin/wrangler"
 
 if [ ! -f .secrets ]; then
-  secret=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 32)
+  secret=$(openssl rand -hex 16)
   printf 'BOT_TOKEN=\nWEBHOOK_SECRET=%s\n' "$secret" > .secrets
   echo "Создан .secrets — впиши BOT_TOKEN от @BotFather и запусти ./deploy.sh снова."
   exit 1
