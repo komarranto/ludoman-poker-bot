@@ -102,7 +102,8 @@ test('/ludoman_spin создаёт лобби, автор уже за столо
   assert.strictEqual(game.players.length, 1);
   assert.strictEqual(game.messageId, 101);
   assert.strictEqual(env.ScriptApp.triggers.length, 1);
-  assert.ok(lastEdit().text.includes('Антон'));
+  assert.strictEqual(calls.filter(c => c.method === 'editMessageText').length, 0, 'лобби должно уходить одним sendMessage');
+  assert.ok(calls.filter(c => c.method === 'sendMessage').pop().payload.text.includes('Антон'));
 });
 test('повторный /ludoman_spin не создаёт вторую игру', () => {
   msg(2, '/ludoman_spin');
@@ -110,9 +111,9 @@ test('повторный /ludoman_spin не создаёт вторую игру
   assert.ok(calls.filter(c => c.method === 'sendMessage').pop().payload.text.includes('уже идёт'));
 });
 test('кнопка «Присоединиться» добавляет игроков, повтор — нет', () => {
-  click(2, 'j:101', 101);
-  click(3, 'j:101', 101);
-  click(2, 'j:101', 101);
+  click(2, 'j:1', 101);
+  click(3, 'j:1', 101);
+  click(2, 'j:1', 101);
   game = JSON.parse(store['game_' + CHAT]);
   assert.strictEqual(game.players.length, 3);
   assert.ok(lastAnswer().text.includes('уже за столом'));
@@ -120,7 +121,7 @@ test('кнопка «Присоединиться» добавляет игро�
 });
 test('до дедлайна карты не раздаются', () => {
   now += 10_000;
-  click(1, 'c:101', 101);
+  click(1, 'c:1', 101);
   assert.ok(lastAnswer().text.includes('ещё не розданы'));
 });
 test('таймер раздаёт по 2 карты, списывает анте, удаляет триггер', () => {
@@ -137,24 +138,24 @@ test('таймер раздаёт по 2 карты, списывает анте
   assert.ok(lastEdit().text.includes('Префлоп'));
 });
 test('«Мои карты» показывает alert только игроку', () => {
-  click(2, 'c:101', 101);
+  click(2, 'c:1', 101);
   const a = lastAnswer();
   assert.strictEqual(a.show_alert, true);
   assert.ok(a.text.includes('Твои карты: ' + env.cardsToString(game.players[1].cards)));
-  click(99, 'c:101', 101);
+  click(99, 'c:1', 101);
   assert.ok(lastAnswer().text.includes('не за столом'));
 });
 test('опоздавший не может присоединиться', () => {
-  click(99, 'j:101', 101);
+  click(99, 'j:1', 101);
   assert.ok(lastAnswer().text.includes('уже розданы'));
 });
 test('флоп → тёрн → ривер открываются в том же сообщении', () => {
-  click(1, 'n:101', 101);
+  click(1, 'n:1', 101);
   assert.strictEqual(JSON.parse(store['game_' + CHAT]).board.length, 3);
   assert.ok(lastEdit().text.includes('Флоп'));
-  click(2, 'n:101', 101);
+  click(2, 'n:1', 101);
   assert.strictEqual(JSON.parse(store['game_' + CHAT]).board.length, 4);
-  click(3, 'n:101', 101);
+  click(3, 'n:1', 101);
   game = JSON.parse(store['game_' + CHAT]);
   assert.strictEqual(game.board.length, 5);
   assert.strictEqual(game.phase, 'river');
@@ -162,7 +163,7 @@ test('флоп → тёрн → ривер открываются в том же
 });
 test('вскрытие: победитель получает банк, игра очищается', () => {
   const expected = env.showdown(game.players, game.board);
-  click(1, 'n:101', 101);
+  click(1, 'n:1', 101);
   assert.strictEqual(store['game_' + CHAT], undefined);
   const banks = JSON.parse(store['banks_' + CHAT]);
   const total = [1, 2, 3].reduce((s, id) => s + banks[id].chips, 0);
@@ -171,7 +172,7 @@ test('вскрытие: победитель получает банк, игра
   assert.ok(lastEdit().text.includes('🏆'));
 });
 test('клик по старой раздаче — вежливый отказ', () => {
-  click(1, 'n:101', 101);
+  click(1, 'n:1', 101);
   assert.ok(lastAnswer().text.includes('уже закончена'));
 });
 test('/ludoman_top показывает рейтинг', () => {
@@ -186,7 +187,7 @@ test('лобби из одного игрока по таймеру отменя
   assert.ok(calls.filter(c => c.method === 'editMessageText').some(c => c.payload.text.includes('Не набралось')));
 });
 test('/ludoman_cancel возвращает анте после раздачи', () => {
-  msg(1, '/ludoman_spin'); click(2, 'j:' + msgCounter, msgCounter);
+  msg(1, '/ludoman_spin'); click(2, 'j:3', msgCounter);
   now += 40_000; env.onLobbyTimeout();
   const before = JSON.parse(store['banks_' + CHAT])[1].chips;
   msg(1, '/ludoman_cancel');

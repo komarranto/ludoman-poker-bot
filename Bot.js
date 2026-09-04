@@ -12,7 +12,7 @@
 // нажавший) → флоп / тёрн / ривер открываются кнопкой прямо в этом же
 // сообщении → вскрытие, победитель забирает банк фишек.
 
-const BOT_VERSION = '2026.09.04-1';
+const BOT_VERSION = '2026.09.04-2';
 
 const JOIN_SECONDS = 30;      // сколько секунд собираем игроков
 const START_CHIPS = 1000;     // стартовый стек фишек у нового игрока
@@ -152,7 +152,7 @@ function renderLobby(game) {
 }
 
 function lobbyKeyboard(game) {
-  return [[{ text: '🙋 Присоединиться (' + game.players.length + ')', callback_data: 'j:' + game.messageId }]];
+  return [[{ text: '🙋 Присоединиться (' + game.players.length + ')', callback_data: 'j:' + game.handNo }]];
 }
 
 function startLobby(chat, user) {
@@ -181,10 +181,11 @@ function startLobby(chat, user) {
     pot: 0
   };
 
-  const sent = sendHtml(chatId, renderLobby(game), [[{ text: '🙋 Присоединиться (1)', callback_data: 'j:0' }]]);
+  // В callback_data кладём номер раздачи, а не message_id — так лобби
+  // отправляется одним вызовом API, без повторного редактирования.
+  const sent = sendHtml(chatId, renderLobby(game), lobbyKeyboard(game));
   if (!sent.ok) return null;
   game.messageId = sent.result.message_id;
-  editHtml(chatId, game.messageId, renderLobby(game), lobbyKeyboard(game));
   saveGame(game);
 
   // Таймер: триггер сработает через ~30–60 сек (точность Apps Script — до минуты).
@@ -268,8 +269,8 @@ function renderTable(game) {
 
 function tableKeyboard(game) {
   return [
-    [{ text: '👀 Мои карты', callback_data: 'c:' + game.messageId }],
-    [{ text: NEXT_BUTTON[game.phase], callback_data: 'n:' + game.messageId }]
+    [{ text: '👀 Мои карты', callback_data: 'c:' + game.handNo }],
+    [{ text: NEXT_BUTTON[game.phase], callback_data: 'n:' + game.handNo }]
   ];
 }
 
@@ -484,10 +485,10 @@ function handleCallback(cb) {
   const chatId = cb.message && cb.message.chat.id;
   const parts = String(cb.data || '').split(':');
   const action = parts[0];
-  const messageId = Number(parts[1]);
+  const handNo = Number(parts[1]);
 
   let game = loadGame(chatId);
-  if (!game || game.messageId !== messageId) {
+  if (!game || game.handNo !== handNo) {
     answerCallback(cb.id, 'Эта раздача уже закончена');
     return;
   }
