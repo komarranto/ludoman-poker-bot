@@ -4,7 +4,7 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-6';
+export const BOT_VERSION = '2026.09.04-7';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
@@ -12,6 +12,7 @@ export const STREET_DELAY_MS = 4000; // пауза между улицами
 export const RIVER_DRAMA_MS = 6000; // барабанная дробь перед ривером
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
+export const DUEL_TIMEOUT_MS = 60000; // сколько ждём принятия вызова на дуэль
 
 const PHASE_TITLES = { preflop: 'Префлоп', flop: 'Флоп', turn: 'Тёрн', river: 'Ривер' };
 
@@ -123,6 +124,7 @@ export class PokerTable {
     const chatId = message.chat.id;
 
     if (command === '/ludoman_spin') await this.startLobby(message.chat, message.from);
+    else if (command === '/ludoman_duel') await this.startDuel(message.chat, message.from, message.text);
     else if (command === '/ludoman_top') await this.handleTop(chatId);
     else if (command === '/ludoman_cancel') await this.handleCancel(chatId);
     else if (command === '/bot_version') await this.sendHtml(chatId, `🤖 Ludoman bot, версия <b>${BOT_VERSION}</b>`);
@@ -130,6 +132,7 @@ export class PokerTable {
       await this.sendHtml(chatId,
         '🎰 <b>Ludoman Spin</b> — техасский холдем прямо в чате.\n\n' +
         '/ludoman_spin — раздача: 30 сек на вход, карты всем открыто, улицы крутятся сами\n' +
+        '/ludoman_duel @username — вызвать конкретного игрока, без ожидания сбора\n' +
         '/ludoman_top — кто чаще побеждал\n' +
         '/ludoman_cancel — отменить текущую раздачу\n\n' +
         'Добавь меня в группу и позови друзей.');
@@ -146,6 +149,9 @@ export class PokerTable {
     if (action === 'j') {
       if (game.phase !== 'lobby') await this.answer(cb.id, 'Карты уже розданы — жди следующую раздачу');
       else await this.handleJoin(game, cb.from, cb.id);
+    } else if (action === 'd') {
+      if (game.phase !== 'duel_wait') await this.answer(cb.id, 'Вызов уже сыгран');
+      else await this.handleDuelAccept(game, cb.from, cb.id);
     } else {
       await this.answer(cb.id, '');
     }
@@ -220,6 +226,78 @@ export class PokerTable {
     await this.answer(callbackId, `Ты в игре! Раздача через ${left} сек, если никто больше не войдёт`);
   }
 
+  // ---------- дуэль 1 на 1 ----------
+
+  renderDuelChallenge(game) {
+    const left = Math.max(0, Math.round((game.deadline - this.now()) / 1000));
+    return [
+      `⚔️ <b>LUDOMAN SPIN</b> — вызов #${game.handNo}`,
+      '',
+      `${escapeHtml(game.players[0].name)} вызывает @${escapeHtml(game.targetUsername)} на дуэль!`,
+      'Карты открыты сразу, улицы крутятся сами — без ожидания сбора стола.',
+      '',
+      `⏳ ${left} сек на принятие.`
+    ].join('\n');
+  }
+
+  duelKeyboard(game) {
+    return [[{ text: '⚔️ Принять вызов', callback_data: `d:${game.handNo}` }]];
+  }
+
+  async startDuel(chat, user, text) {
+    const chatId = chat.id;
+    const existing = await this.storage.get('game');
+    if (existing) {
+      await this.sendHtml(chatId, `Игра уже идёт (раздача #${existing.handNo}). Дождитесь конца или /ludoman_cancel.`);
+      return existing;
+    }
+    const target = text.trim().split(/\s+/)[1];
+    const match = target && target.match(/^@([A-Za-z0-9_]{1,32})$/);
+    if (!match) {
+      await this.sendHtml(chatId, 'Позови конкретного игрока по нику: <code>/ludoman_duel @username</code>');
+      return null;
+    }
+    const targetUsername = match[1];
+    if (user.username && user.username.toLowerCase() === targetUsername.toLowerCase()) {
+      await this.sendHtml(chatId, 'Сам с собой? 🤔 Позови другого игрока.');
+      return null;
+    }
+
+    const stats = await this.loadStats();
+    const handNo = (stats.__handNo || 0) + 1;
+    stats.__handNo = handNo;
+    await this.saveStats(stats);
+
+    const game = {
+      chatId, messageId: null, phase: 'duel_wait', handNo,
+      deadline: this.now() + DUEL_TIMEOUT_MS,
+      targetUsername,
+      players: [{ id: user.id, name: displayName(user), cards: [] }],
+      deck: [], board: [], chances: [], preflopChances: null
+    };
+    const sent = await this.sendHtml(chatId, this.renderDuelChallenge(game), this.duelKeyboard(game));
+    if (!sent.ok) return null;
+    game.messageId = sent.result.message_id;
+    await this.saveGame(game);
+    await this.storage.setAlarm(game.deadline);
+    return game;
+  }
+
+  async handleDuelAccept(game, user, callbackId) {
+    if (user.id === game.players[0].id) {
+      await this.answer(callbackId, 'Сам с собой не сыграешь 🙃');
+      return;
+    }
+    if (!user.username || user.username.toLowerCase() !== game.targetUsername.toLowerCase()) {
+      await this.answer(callbackId, 'Этот вызов не тебе 😉');
+      return;
+    }
+    game.players.push({ id: user.id, name: displayName(user), cards: [] });
+    this.dealHand(game);
+    await this.revealStreet(game);
+    await this.answer(callbackId, 'Вызов принят! Погнали 🔥');
+  }
+
   // ---------- раздача и автопрокрутка ----------
 
   /** Достаточно ли игроков и прошло ли 5 сек тишины после последнего входа */
@@ -238,6 +316,14 @@ export class PokerTable {
     const game = await this.storage.get('game');
     if (!game) return;
 
+    if (game.phase === 'duel_wait') {
+      await this.editHtml(game.chatId, game.messageId,
+        `⚔️ <b>LUDOMAN SPIN</b> — вызов #${game.handNo}\n\n` +
+        `⌛ @${escapeHtml(game.targetUsername)} не принял(а) вызов вовремя. Можно кинуть новый: /ludoman_duel @username`);
+      await this.clearGame();
+      return;
+    }
+
     if (game.phase === 'lobby') {
       if (this.now() < game.deadline && !this.idleLongEnough(game)) {
         // Кто-то вошёл недавно — ждём ещё, но не дольше общего дедлайна
@@ -251,10 +337,7 @@ export class PokerTable {
         await this.clearGame();
         return;
       }
-      game.deck = newDeck();
-      for (const p of game.players) p.cards = [game.deck.pop(), game.deck.pop()];
-      game.board = [];
-      game.phase = 'preflop';
+      this.dealHand(game);
     } else if (game.phase === 'preflop') {
       game.board.push(game.deck.pop(), game.deck.pop(), game.deck.pop());
       game.phase = 'flop';
@@ -277,6 +360,19 @@ export class PokerTable {
       return;
     }
 
+    await this.revealStreet(game);
+  }
+
+  /** Раздать по 2 карты и открыть стол под префлоп */
+  dealHand(game) {
+    game.deck = newDeck();
+    for (const p of game.players) p.cards = [game.deck.pop(), game.deck.pop()];
+    game.board = [];
+    game.phase = 'preflop';
+  }
+
+  /** Посчитать шансы, сохранить, показать улицу, поставить будильник на следующую */
+  async revealStreet(game) {
     game.chances = winChances(game.players, game.board);
     if (game.phase === 'preflop' && !game.preflopChances) game.preflopChances = game.chances.slice();
     await this.saveGame(game);

@@ -63,7 +63,7 @@ table.now = () => now;
 let updateId = 1;
 const CHAT = -100500;
 const chat = { id: CHAT, type: 'supergroup' };
-const users = { 1: { id: 1, first_name: 'Антон' }, 2: { id: 2, first_name: 'Вика', last_name: 'К' }, 3: { id: 3, username: 'third' }, 99: { id: 99, first_name: 'Зевака' } };
+const users = { 1: { id: 1, first_name: 'Антон', username: 'first' }, 2: { id: 2, first_name: 'Вика', last_name: 'К' }, 3: { id: 3, username: 'third' }, 99: { id: 99, first_name: 'Зевака' } };
 const send = u => table.handleUpdate(Object.assign({ update_id: updateId++ }, u));
 const msg = (uid, text) => send({ message: { chat, from: users[uid], text } });
 const click = (uid, data) => send({ callback_query: { id: 'cb' + updateId, from: users[uid], data, message: { chat, message_id: 101 } } });
@@ -211,6 +211,57 @@ await test('бэдбит: фаворит префлопа проигрывает
   const text = last('editMessageText').text;
   assert.ok(text.includes('Фаворит') && text.includes('😱 БЭДБИТ!'));
   assert.ok(!text.match(/Андердог[^\\n]*БЭДБИТ/));
+});
+
+console.log('Дуэли:');
+await test('/ludoman_duel без ника — подсказка по использованию', async () => {
+  await msg(1, '/ludoman_duel');
+  assert.ok(last('sendMessage').text.includes('/ludoman_duel @username'));
+  assert.strictEqual(game(), undefined);
+});
+await test('/ludoman_duel на самого себя отклоняется', async () => {
+  await msg(1, '/ludoman_duel @first');
+  assert.ok(last('sendMessage').text.includes('Сам с собой'));
+  assert.strictEqual(game(), undefined);
+});
+await test('/ludoman_duel создаёт вызов без ожидания сбора', async () => {
+  await msg(1, '/ludoman_duel @third');
+  assert.strictEqual(game().phase, 'duel_wait');
+  assert.strictEqual(game().targetUsername, 'third');
+  assert.strictEqual(game().players.length, 1);
+  assert.ok(last('sendMessage').text.includes('вызывает @third'));
+  assert.strictEqual(alarmAt, now + 60000);
+});
+await test('чужой клик по «Принять вызов» отклоняется', async () => {
+  await click(2, 'd:' + game().handNo);
+  assert.ok(last('answerCallbackQuery').text.includes('не тебе'));
+  assert.strictEqual(game().phase, 'duel_wait');
+});
+await test('адресат принимает — раздача сразу, без 30 и без 5 сек', async () => {
+  const before = now;
+  await click(3, 'd:' + game().handNo);
+  assert.strictEqual(now, before, 'время не сдвигалось');
+  assert.strictEqual(game().phase, 'preflop');
+  assert.strictEqual(game().players.length, 2);
+  assert.ok(game().players.every(p => p.cards.length === 2));
+  assert.ok(last('answerCallbackQuery').text.includes('принят'));
+  assert.ok(last('editMessageText').text.includes('Префлоп'));
+});
+await test('после раздачи улицы дуэли крутятся как обычно', async () => {
+  now += 4000; await table.alarm();
+  assert.strictEqual(game().board.length, 3);
+  await msg(1, '/ludoman_cancel');
+  assert.strictEqual(game(), undefined);
+});
+await test('вызов сгорает по таймауту, если не приняли', async () => {
+  await msg(1, '/ludoman_duel @third');
+  const handNo = game().handNo;
+  now += 60000;
+  await table.alarm();
+  assert.strictEqual(game(), undefined);
+  assert.ok(last('editMessageText').text.includes('не принял'));
+  await click(3, 'd:' + handNo);
+  assert.ok(last('answerCallbackQuery').text.includes('уже закончена'));
 });
 
 // ---------- 3. Worker ----------
