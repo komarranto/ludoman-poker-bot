@@ -167,4 +167,55 @@ function showdown(players, board) {
   return { results: results, winners: winners };
 }
 
-export { newDeck, cardToString, cardsToString, parseCard, parseCards, evaluateFive, evaluateBest, compareScores, showdown, HAND_NAMES };
+/**
+ * Шансы на победу каждого игрока при текущем борде.
+ * Неизвестные карты — все, кроме карманов и борда. Флоп/тёрн считаем точно
+ * (перебор всех доборов), префлоп — Монте-Карло на `samples` раздач.
+ * Возвращает массив процентов (0..100) в порядке players; ничья делится поровну.
+ */
+function winChances(players, board, samples, random) {
+  const rnd = random || Math.random;
+  const known = new Set(players.flatMap(p => p.cards).concat(board).map(c => c.r * 4 + c.s));
+  const unknown = [];
+  for (let s = 0; s < 4; s++) for (let r = 2; r <= 14; r++) if (!known.has(r * 4 + s)) unknown.push({ r, s });
+  const need = 5 - board.length;
+  const wins = players.map(() => 0);
+  let total = 0;
+
+  const settle = extra => {
+    const full = board.concat(extra);
+    const scores = players.map(p => evaluateBest(p.cards.concat(full)).score);
+    let top = scores[0];
+    scores.forEach(sc => { if (compareScores(sc, top) > 0) top = sc; });
+    const winners = scores.map(sc => compareScores(sc, top) === 0);
+    const k = winners.filter(Boolean).length;
+    winners.forEach((w, i) => { if (w) wins[i] += 1 / k; });
+    total++;
+  };
+
+  if (need === 0) {
+    settle([]);
+  } else if (need <= 2) {
+    // точный перебор доборов
+    const pick = [];
+    const walk = start => {
+      if (pick.length === need) { settle(pick.map(i => unknown[i])); return; }
+      for (let i = start; i < unknown.length; i++) { pick.push(i); walk(i + 1); pick.pop(); }
+    };
+    walk(0);
+  } else {
+    const n = samples || 1500;
+    for (let t = 0; t < n; t++) {
+      // частичный Fisher–Yates: первые need карт случайны
+      const pool = unknown.slice();
+      for (let i = 0; i < need; i++) {
+        const j = i + Math.floor(rnd() * (pool.length - i));
+        const tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+      }
+      settle(pool.slice(0, need));
+    }
+  }
+  return wins.map(w => Math.round(100 * w / total));
+}
+
+export { winChances, newDeck, cardToString, cardsToString, parseCard, parseCards, evaluateFive, evaluateBest, compareScores, showdown, HAND_NAMES };

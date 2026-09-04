@@ -90,55 +90,51 @@ await test('кнопка «Присоединиться»: добавляет, �
   assert.ok(last('answerCallbackQuery').text.includes('уже за столом'));
   assert.ok(last('editMessageText').text.includes('Вика К') && last('editMessageText').text.includes('@third'));
 });
-await test('до раздачи карты не показываются', async () => {
-  await click(1, 'c:1');
-  assert.ok(last('answerCallbackQuery').text.includes('ещё не розданы'));
-});
-await test('будильник раздаёт по 2 карты и списывает анте', async () => {
+await test('будильник раздаёт: карты всех открыты, проценты в сумме ~100, кнопок нет', async () => {
   now += 30_000;
   await table.alarm();
   assert.strictEqual(game().phase, 'preflop');
   assert.ok(game().players.every(p => p.cards.length === 2));
-  assert.strictEqual(game().pot, 300);
   assert.strictEqual(game().deck.length, 46);
-  assert.strictEqual(store.get('banks')[1].chips, 900);
-  assert.ok(last('editMessageText').text.includes('Префлоп'));
-});
-await test('«Мои карты» — alert только игроку', async () => {
-  await click(2, 'c:1');
-  const a = last('answerCallbackQuery');
-  assert.strictEqual(a.show_alert, true);
-  assert.ok(a.text.includes('Твои карты: ' + P.cardsToString(game().players[1].cards)));
-  await click(99, 'c:1');
-  assert.ok(last('answerCallbackQuery').text.includes('не за столом'));
+  const text = last('editMessageText').text;
+  for (const p of game().players) assert.ok(text.includes(P.cardsToString(p.cards)), 'карты открыты всем');
+  const sum = game().chances.reduce((a, b) => a + b, 0);
+  assert.ok(sum >= 97 && sum <= 103, 'сумма шансов ' + sum);
+  assert.ok(text.includes('%'));
+  assert.deepStrictEqual(last('editMessageText').reply_markup.inline_keyboard, []);
+  assert.strictEqual(alarmAt, now + 4000, 'следующая улица через 4 сек');
 });
 await test('опоздавший не может присоединиться', async () => {
   await click(99, 'j:1');
   assert.ok(last('answerCallbackQuery').text.includes('уже розданы'));
 });
-await test('флоп → тёрн → ривер в том же сообщении', async () => {
-  await click(1, 'n:1'); assert.strictEqual(game().board.length, 3); assert.ok(last('editMessageText').text.includes('Флоп'));
-  await click(2, 'n:1'); assert.strictEqual(game().board.length, 4);
-  await click(3, 'n:1'); assert.strictEqual(game().board.length, 5);
+await test('улицы крутятся сами: флоп → тёрн → ривер в том же сообщении', async () => {
+  now += 4000; await table.alarm();
+  assert.strictEqual(game().board.length, 3); assert.ok(last('editMessageText').text.includes('Флоп'));
+  now += 4000; await table.alarm();
+  assert.strictEqual(game().board.length, 4);
+  now += 4000; await table.alarm();
+  assert.strictEqual(game().board.length, 5);
   assert.strictEqual(game().phase, 'river');
   assert.strictEqual(last('editMessageText').message_id, 101);
+  assert.ok(game().chances.some(c => c === 100) || game().chances.filter(c => c > 0).length > 1, 'на ривере шансы определены');
 });
-await test('вскрытие: победитель получает банк, игра очищается', async () => {
+await test('вскрытие: победитель в статистике, игра очищается', async () => {
   const expected = P.showdown(game().players, game().board);
-  await click(1, 'n:1');
+  now += 4000; await table.alarm();
   assert.strictEqual(game(), undefined);
-  const banks = store.get('banks');
-  assert.strictEqual([1, 2, 3].reduce((s, id) => s + banks[id].chips, 0), 3000 - (300 % expected.winners.length));
-  expected.winners.forEach(id => assert.ok(banks[id].chips > 900));
+  const stats = store.get('stats');
+  for (const id of expected.winners) assert.strictEqual(stats[id].wins, 1);
+  assert.strictEqual([1, 2, 3].reduce((s, id) => s + stats[id].hands, 0), 3);
   assert.ok(last('editMessageText').text.includes('🏆'));
 });
 await test('клик по старой раздаче — вежливый отказ', async () => {
-  await click(1, 'n:1');
+  await click(1, 'j:1');
   assert.ok(last('answerCallbackQuery').text.includes('уже закончена'));
 });
-await test('/ludoman_top показывает рейтинг', async () => {
+await test('/ludoman_top показывает рейтинг по победам', async () => {
   await msg(1, '/ludoman_top');
-  assert.ok(last('sendMessage').text.includes('🥇'));
+  assert.ok(last('sendMessage').text.includes('🥇') && last('sendMessage').text.includes('побед'));
 });
 await test('лобби из одного игрока по будильнику отменяется', async () => {
   await msg(1, '/ludoman_spin');
@@ -146,12 +142,9 @@ await test('лобби из одного игрока по будильнику 
   assert.strictEqual(game(), undefined);
   assert.ok(last('editMessageText').text.includes('Не набралось'));
 });
-await test('/ludoman_cancel возвращает анте и снимает будильник', async () => {
+await test('/ludoman_cancel снимает будильник и чистит игру', async () => {
   await msg(1, '/ludoman_spin'); await click(2, 'j:3');
-  now += 30_000; await table.alarm();
-  const before = store.get('banks')[1].chips;
   await msg(1, '/ludoman_cancel');
-  assert.strictEqual(store.get('banks')[1].chips, before + 100);
   assert.strictEqual(game(), undefined);
   assert.strictEqual(alarmAt, null);
 });
@@ -159,6 +152,16 @@ await test('дубль update_id не обрабатывается дважды'
   const n = calls.length;
   await table.handleUpdate({ update_id: 5, message: { chat, from: users[1], text: '/ludoman_top' } });
   assert.strictEqual(calls.length, n);
+});
+await test('шансы: AA против KK против 72 на префлопе', () => {
+  const pl = [{ cards: P.parseCards('A♠ A♥') }, { cards: P.parseCards('K♦ K♣') }, { cards: P.parseCards('7♠ 2♦') }];
+  const c = P.winChances(pl, [], 2000);
+  assert.ok(c[0] > 60 && c[1] > 12 && c[1] < 30 && c[2] < 15, 'шансы ' + c);
+});
+await test('шансы: на ривере ровно 100/0, ничья делится', () => {
+  const pl = [{ cards: P.parseCards('2♥ 3♦') }, { cards: P.parseCards('4♥ 5♦') }];
+  assert.deepStrictEqual(P.winChances(pl, P.parseCards('A♠ K♥ Q♦ J♣ 10♠')), [50, 50]);
+  assert.deepStrictEqual(P.winChances([{ cards: P.parseCards('A♠ A♥') }, { cards: P.parseCards('7♠ 2♦') }], P.parseCards('A♦ K♠ 9♣ 4♥ 3♥')), [100, 0]);
 });
 
 // ---------- 3. Worker ----------
