@@ -4,9 +4,10 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-4';
+export const BOT_VERSION = '2026.09.04-5';
 
 export const JOIN_SECONDS = 30;
+export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
 export const STREET_DELAY_MS = 4000; // пауза между улицами
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 10;
@@ -142,7 +143,7 @@ export class PokerTable {
       `🎰 <b>LUDOMAN SPIN</b> — раздача #${game.handNo}`,
       'Техасский холдем: карты всем открыто, улицы крутятся сами.',
       '',
-      `⏳ Сбор игроков: ${JOIN_SECONDS} сек (осталось ${left}).`,
+      `⏳ Сбор игроков: до ${JOIN_SECONDS} сек (осталось ${left}). Если 5 сек никто не входит — стартуем.`,
       ''
     ];
     if (game.players.length) {
@@ -173,6 +174,7 @@ export class PokerTable {
     const game = {
       chatId, messageId: null, phase: 'lobby', handNo,
       deadline: this.now() + JOIN_SECONDS * 1000,
+      lastJoinAt: this.now(),
       players: [{ id: user.id, name: displayName(user), cards: [] }],
       deck: [], board: [], chances: []
     };
@@ -194,13 +196,26 @@ export class PokerTable {
       return;
     }
     game.players.push({ id: user.id, name: displayName(user), cards: [] });
+    game.lastJoinAt = this.now();
     await this.saveGame(game);
+    await this.storage.setAlarm(this.nextLobbyCheck(game));
     await this.editHtml(game.chatId, game.messageId, this.renderLobby(game), this.lobbyKeyboard(game));
-    const left = Math.max(0, Math.round((game.deadline - this.now()) / 1000));
-    await this.answer(callbackId, `Ты в игре! Раздача через ${left} сек`);
+    const left = Math.max(0, Math.round((this.nextLobbyCheck(game) - this.now()) / 1000));
+    await this.answer(callbackId, `Ты в игре! Раздача через ${left} сек, если никто больше не войдёт`);
   }
 
   // ---------- раздача и автопрокрутка ----------
+
+  /** Достаточно ли игроков и прошло ли 5 сек тишины после последнего входа */
+  idleLongEnough(game) {
+    return game.players.length >= MIN_PLAYERS && this.now() - game.lastJoinAt >= IDLE_START_MS;
+  }
+
+  /** Когда следующий раз проверить лобби: через 5 сек после входа, но не позже дедлайна */
+  nextLobbyCheck(game) {
+    if (game.players.length < MIN_PLAYERS) return game.deadline;
+    return Math.min(game.deadline, game.lastJoinAt + IDLE_START_MS);
+  }
 
   /** Шаг будильника: лобби → префлоп → флоп → тёрн → ривер → вскрытие */
   async advance() {
@@ -208,6 +223,11 @@ export class PokerTable {
     if (!game) return;
 
     if (game.phase === 'lobby') {
+      if (this.now() < game.deadline && !this.idleLongEnough(game)) {
+        // Кто-то вошёл недавно — ждём ещё, но не дольше общего дедлайна
+        await this.storage.setAlarm(this.nextLobbyCheck(game));
+        return;
+      }
       if (game.players.length < MIN_PLAYERS) {
         await this.editHtml(game.chatId, game.messageId,
           `🎰 <b>LUDOMAN SPIN</b> — раздача #${game.handNo}\n\n` +

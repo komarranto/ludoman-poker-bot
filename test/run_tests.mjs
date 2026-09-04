@@ -84,14 +84,26 @@ await test('повторный /ludoman_spin не создаёт вторую и
   assert.strictEqual(game().handNo, 1);
   assert.ok(last('sendMessage').text.includes('уже идёт'));
 });
-await test('кнопка «Присоединиться»: добавляет, повтор отклоняет', async () => {
-  await click(2, 'j:1'); await click(3, 'j:1'); await click(2, 'j:1');
+await test('кнопка «Присоединиться»: добавляет, повтор отклоняет, будильник через 5 сек', async () => {
+  now += 3000;
+  await click(2, 'j:1');
+  assert.strictEqual(alarmAt, now + 5000, 'после второго игрока проверка через 5 сек');
+  now += 2000;
+  await click(3, 'j:1'); await click(2, 'j:1');
   assert.strictEqual(game().players.length, 3);
+  assert.strictEqual(alarmAt, now + 5000, 'новый вход сдвигает таймер');
   assert.ok(last('answerCallbackQuery').text.includes('уже за столом'));
   assert.ok(last('editMessageText').text.includes('Вика К') && last('editMessageText').text.includes('@third'));
 });
-await test('будильник раздаёт: карты всех открыты, проценты в сумме ~100, кнопок нет', async () => {
-  now += 30_000;
+await test('будильник до 5 сек тишины не раздаёт, а ждёт', async () => {
+  now += 2000;
+  await table.alarm();
+  assert.strictEqual(game().phase, 'lobby');
+  assert.strictEqual(alarmAt, game().lastJoinAt + 5000);
+});
+await test('5 сек тишины при ≥2 игроках: раздача раньше 30 сек, карты открыты, проценты ~100, кнопок нет', async () => {
+  now += 3000;
+  assert.ok(now < game().deadline, 'ещё не 30 сек');
   await table.alarm();
   assert.strictEqual(game().phase, 'preflop');
   assert.ok(game().players.every(p => p.cards.length === 2));
@@ -136,8 +148,9 @@ await test('/ludoman_top показывает рейтинг по победам
   await msg(1, '/ludoman_top');
   assert.ok(last('sendMessage').text.includes('🥇') && last('sendMessage').text.includes('побед'));
 });
-await test('лобби из одного игрока по будильнику отменяется', async () => {
+await test('лобби из одного игрока ждёт полные 30 сек и отменяется', async () => {
   await msg(1, '/ludoman_spin');
+  assert.strictEqual(alarmAt, now + 30_000);
   now += 30_000; await table.alarm();
   assert.strictEqual(game(), undefined);
   assert.ok(last('editMessageText').text.includes('Не набралось'));
