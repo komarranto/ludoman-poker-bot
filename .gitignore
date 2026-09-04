@@ -1,4 +1,5 @@
-Config.js
-.deploy.env
+.dev.vars
+.wrangler/
 node_modules/
 .DS_Store
+.secrets

@@ -1,0 +1,14 @@
+name = "ludoman-poker-bot"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+[vars]
+TELEGRAM_API = "https://api.telegram.org"
+
+[durable_objects]
+bindings = [{ name = "TABLE", class_name = "PokerTable" }]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PokerTable"]

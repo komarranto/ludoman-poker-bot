@@ -167,7 +167,4 @@ function showdown(players, board) {
   return { results: results, winners: winners };
 }
 
-// Экспорт для Node-тестов (в Apps Script module не определён — игнорируется)
-if (typeof module !== 'undefined') {
-  module.exports = { newDeck, cardToString, cardsToString, parseCard, parseCards, evaluateFive, evaluateBest, compareScores, showdown, HAND_NAMES };
-}
+export { newDeck, cardToString, cardsToString, parseCard, parseCards, evaluateFive, evaluateBest, compareScores, showdown, HAND_NAMES };

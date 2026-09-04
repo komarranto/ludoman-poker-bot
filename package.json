@@ -1,0 +1,29 @@
+{
+  "name": "ludoman-poker-bot",
+  "version": "1.0.0",
+  "description": "Техасский холдем прямо в групповом чате. Работает на Google Apps Script (бесплатно, без сервера), деплой через clasp.",
+  "main": "Bot.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/run_tests.mjs",
+    "dev": "wrangler dev",
+    "deploy": "./deploy.sh"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/komarranto/ludoman-poker-bot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/komarranto/ludoman-poker-bot/issues"
+  },
+  "homepage": "https://github.com/komarranto/ludoman-poker-bot#readme",
+  "devDependencies": {
+    "wrangler": "^4.129.0"
+  }
+}
