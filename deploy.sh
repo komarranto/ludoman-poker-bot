@@ -15,7 +15,8 @@ source .secrets
 [ -n "${BOT_TOKEN:-}" ] || { echo "В .secrets пустой BOT_TOKEN. Возьми токен у @BotFather."; exit 1; }
 [ -n "${WEBHOOK_SECRET:-}" ] || { echo "В .secrets пустой WEBHOOK_SECRET."; exit 1; }
 
-"$W" whoami >/dev/null 2>&1 || { echo "Cloudflare не авторизован: запусти  npx wrangler login  и повтори."; exit 1; }
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-}"
+"$W" whoami >/dev/null 2>&1 || { echo "Cloudflare не авторизован: положи CLOUDFLARE_API_TOKEN в .secrets или сделай npx wrangler login."; exit 1; }
 
 echo "→ Проверяю токен бота…"
 me=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getMe")
