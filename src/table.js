@@ -4,13 +4,15 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-8';
+export const BOT_VERSION = '2026.09.04-9';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
 export const STREET_DELAY_MS = 4000; // пауза между улицами
 export const RIVER_DRAMA_MS = 6000; // барабанная дробь перед ривером
 export const MIN_PLAYERS = 2;
+export const BOT_PLAYER_ID = -1;
+export const BOT_PLAYER_NAME = 'Старик Лудоман';
 export const MAX_PLAYERS = 10;
 export const DUEL_TIMEOUT_MS = 60000; // сколько ждём принятия вызова на дуэль
 
@@ -179,6 +181,9 @@ export class PokerTable {
     if (game.players.length) {
       lines.push(`<b>За столом (${game.players.length}):</b>`);
       game.players.forEach((p, i) => lines.push(`${i + 1}. ${escapeHtml(p.name)}`));
+      if (game.players.length === 1) {
+        lines.push('', `Никто не зайдёт — сыграешь против ${escapeHtml(BOT_PLAYER_NAME)} 🤖`);
+      }
     } else {
       lines.push('Пока никого. Жми кнопку!');
     }
@@ -339,11 +344,7 @@ export class PokerTable {
         return;
       }
       if (game.players.length < MIN_PLAYERS) {
-        await this.editHtml(game.chatId, game.messageId,
-          `🎰 <b>LUDOMAN SPIN</b> — раздача #${game.handNo}\n\n` +
-          `😴 Не набралось игроков (нужно минимум ${MIN_PLAYERS}). Попробуйте ещё раз: /ludoman_spin`);
-        await this.clearGame();
-        return;
+        game.players.push({ id: BOT_PLAYER_ID, name: BOT_PLAYER_NAME, cards: [], isBot: true });
       }
       this.dealHand(game);
     } else if (game.phase === 'preflop') {
@@ -414,6 +415,7 @@ export class PokerTable {
     const result = showdown(game.players, game.board);
     const stats = await this.loadStats();
     for (const p of game.players) {
+      if (p.id === BOT_PLAYER_ID) continue; // рейтинг только для живых игроков
       const s = stats[p.id] || { name: p.name, hands: 0, wins: 0 };
       s.name = p.name;
       s.hands += 1;

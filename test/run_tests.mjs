@@ -2,7 +2,7 @@
 // 1) оценка покерных комбинаций; 2) полный прогон стола с фейковым Telegram и хранилищем.
 import assert from 'node:assert';
 import * as P from '../src/poker.js';
-import { PokerTable } from '../src/table.js';
+import { PokerTable, BOT_PLAYER_ID, BOT_PLAYER_NAME } from '../src/table.js';
 import worker from '../src/index.js';
 
 let passed = 0;
@@ -159,12 +159,30 @@ await test('/ludoman_top показывает рейтинг по победам
   await msg(1, '/ludoman_top');
   assert.ok(last('sendMessage').text.includes('🥇') && last('sendMessage').text.includes('побед'));
 });
-await test('лобби из одного игрока ждёт полные 30 сек и отменяется', async () => {
+await test('лобби из одного игрока: подсказка про бота, потом ждёт 30 сек', async () => {
   await msg(1, '/ludoman_spin');
+  assert.ok(last('sendMessage').text.includes(BOT_PLAYER_NAME));
   assert.strictEqual(alarmAt, now + 30_000);
+});
+await test('никто не подключился — раздача против Старика Лудомана, а не отмена', async () => {
   now += 30_000; await table.alarm();
+  assert.strictEqual(game().phase, 'preflop');
+  assert.strictEqual(game().players.length, 2);
+  const bot = game().players.find(p => p.id === BOT_PLAYER_ID);
+  assert.ok(bot && bot.name === BOT_PLAYER_NAME && bot.cards.length === 2);
+  assert.ok(last('editMessageText').text.includes(BOT_PLAYER_NAME));
+});
+await test('бот-соперник не попадает в рейтинг /ludoman_top', async () => {
+  now += 4000; await table.alarm(); // флоп
+  now += 4000; await table.alarm(); // тёрн
+  now += 4000; await table.alarm(); // барабанная дробь
+  now += 6000; await table.alarm(); // ривер
+  now += 4000; await table.alarm(); // вскрытие
   assert.strictEqual(game(), undefined);
-  assert.ok(last('editMessageText').text.includes('Не набралось'));
+  const stats = store.get('stats');
+  assert.strictEqual(stats[BOT_PLAYER_ID], undefined, 'у бота не должно быть записи в статистике');
+  await msg(1, '/ludoman_top');
+  assert.ok(!last('sendMessage').text.includes(BOT_PLAYER_NAME));
 });
 await test('/ludoman_cancel снимает будильник и чистит игру', async () => {
   await msg(1, '/ludoman_spin'); await click(2, 'j:3');
