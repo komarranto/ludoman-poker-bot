@@ -114,14 +114,14 @@ await test('5 сек тишины при ≥2 игроках: раздача р�
   assert.ok(sum >= 97 && sum <= 103, 'сумма шансов ' + sum);
   assert.ok(text.includes('%'));
   assert.deepStrictEqual(last('editMessageText').reply_markup.inline_keyboard, []);
-  assert.strictEqual(alarmAt, now + 4000, 'следующая улица через 4 сек');
+  assert.strictEqual(alarmAt, now + 5500, 'перед флопом пауза длиннее обычной');
 });
 await test('опоздавший не может присоединиться', async () => {
   await click(99, 'j:1');
   assert.ok(last('answerCallbackQuery').text.includes('уже розданы'));
 });
 await test('улицы крутятся сами: флоп → тёрн → барабанная дробь → ривер в том же сообщении', async () => {
-  now += 4000; await table.alarm();
+  now += 5500; await table.alarm();
   assert.strictEqual(game().board.length, 3); assert.ok(last('editMessageText').text.includes('Флоп'));
   now += 4000; await table.alarm();
   assert.strictEqual(game().board.length, 4); assert.ok(last('editMessageText').text.includes('Тёрн'));
@@ -173,7 +173,7 @@ await test('никто не подключился — раздача проти
   assert.ok(last('editMessageText').text.includes(BOT_PLAYER_NAME));
 });
 await test('бот-соперник не попадает в рейтинг /ludoman_top', async () => {
-  now += 4000; await table.alarm(); // флоп
+  now += 5500; await table.alarm(); // флоп
   now += 4000; await table.alarm(); // тёрн
   now += 4000; await table.alarm(); // барабанная дробь
   now += 6000; await table.alarm(); // ривер
@@ -266,7 +266,7 @@ await test('адресат принимает — раздача сразу, б�
   assert.ok(last('editMessageText').text.includes('Префлоп'));
 });
 await test('после раздачи улицы дуэли крутятся как обычно', async () => {
-  now += 4000; await table.alarm();
+  now += 5500; await table.alarm();
   assert.strictEqual(game().board.length, 3);
   await msg(1, '/ludoman_cancel');
   assert.strictEqual(game(), undefined);

@@ -4,11 +4,12 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-9';
+export const BOT_VERSION = '2026.09.04-10';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
 export const STREET_DELAY_MS = 4000; // пауза между улицами
+export const FLOP_EXTRA_DELAY_MS = 1500; // дополнительная пауза перед флопом, чтобы префлоп не проскакивал мгновенно
 export const RIVER_DRAMA_MS = 6000; // барабанная дробь перед ривером
 export const MIN_PLAYERS = 2;
 export const BOT_PLAYER_ID = -1;
@@ -382,11 +383,13 @@ export class PokerTable {
 
   /** Посчитать шансы, сохранить, показать улицу, поставить будильник на следующую */
   async revealStreet(game) {
+    const isPreflop = game.phase === 'preflop';
     game.chances = winChances(game.players, game.board);
-    if (game.phase === 'preflop' && !game.preflopChances) game.preflopChances = game.chances.slice();
+    if (isPreflop && !game.preflopChances) game.preflopChances = game.chances.slice();
     await this.saveGame(game);
     await this.editHtml(game.chatId, game.messageId, this.renderTable(game), []);
-    await this.storage.setAlarm(this.now() + STREET_DELAY_MS);
+    const delay = STREET_DELAY_MS + (isPreflop ? FLOP_EXTRA_DELAY_MS : 0);
+    await this.storage.setAlarm(this.now() + delay);
   }
 
   renderTable(game) {
