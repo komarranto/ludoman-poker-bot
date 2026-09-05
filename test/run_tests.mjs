@@ -278,10 +278,15 @@ await test('POST без секрета — 403', async () => {
   const r = await worker.fetch(new Request('https://x/', { method: 'POST', body: '{}' }), env);
   assert.strictEqual(r.status, 403);
 });
-await test('POST с секретом уходит в объект нужного чата', async () => {
+await test('POST с секретом уходит в объект нужного чата (без темы)', async () => {
   const r = await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify({ update_id: 9, message: { chat: { id: 42 }, text: '/x' } }) }), env);
   assert.strictEqual(r.status, 200);
-  assert.strictEqual(calls.pop().id, 'id:42');
+  assert.strictEqual(calls.pop().id, 'id:42:0');
+});
+await test('апдейт из темы форума уходит в свой изолированный объект', async () => {
+  const r = await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify({ update_id: 10, message: { chat: { id: 42 }, message_thread_id: 3332, text: '/x' } }) }), env);
+  assert.strictEqual(r.status, 200);
+  assert.strictEqual(calls.pop().id, 'id:42:3332', 'разные темы одного чата не должны делить состояние');
 });
 
 console.log('\n' + (process.exitCode ? 'ЕСТЬ ОШИБКИ' : 'Все тесты прошли') + ': ' + passed);

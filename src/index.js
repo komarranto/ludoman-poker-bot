@@ -30,8 +30,11 @@ export default {
     }
     const chatId = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id;
     if (chatId === undefined) return new Response('ok');
+    // Форумы (супергруппы с темами) шлют message_thread_id — без него все темы
+    // одного чата делили бы одну игру и мешали друг другу.
+    const threadId = update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? 0;
 
-    const stub = env.TABLE.get(env.TABLE.idFromName(String(chatId)));
+    const stub = env.TABLE.get(env.TABLE.idFromName(`${chatId}:${threadId}`));
     await stub.fetch('https://table/update', { method: 'POST', body: JSON.stringify(update) });
     return new Response('ok');
   }

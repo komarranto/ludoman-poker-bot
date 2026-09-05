@@ -4,7 +4,7 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-7';
+export const BOT_VERSION = '2026.09.04-8';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
@@ -54,7 +54,11 @@ export class PokerTable {
   }
 
   async alarm() {
-    await this.ctx.blockConcurrencyWhile(() => this.advance());
+    await this.ctx.blockConcurrencyWhile(async () => {
+      const game = await this.storage.get('game');
+      this.threadId = game?.threadId;
+      await this.advance();
+    });
   }
 
   now() { return Date.now(); }
@@ -75,6 +79,7 @@ export class PokerTable {
 
   sendHtml(chatId, text, keyboard) {
     const payload = { chat_id: chatId, text, parse_mode: 'HTML' };
+    if (this.threadId) payload.message_thread_id = this.threadId;
     if (keyboard) payload.reply_markup = { inline_keyboard: keyboard };
     return this.tg('sendMessage', payload);
   }
@@ -112,6 +117,9 @@ export class PokerTable {
 
   async handleUpdate(update) {
     if (await this.isDuplicate(update.update_id)) return;
+    // В форуме (супергруппа с темами) ответы должны идти в ту же тему,
+    // откуда пришла команда/клик — иначе Telegram кладёт их в General.
+    this.threadId = update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id;
 
     if (update.callback_query) {
       await this.handleCallback(update.callback_query);
@@ -194,7 +202,7 @@ export class PokerTable {
     await this.saveStats(stats);
 
     const game = {
-      chatId, messageId: null, phase: 'lobby', handNo,
+      chatId, threadId: this.threadId, messageId: null, phase: 'lobby', handNo,
       deadline: this.now() + JOIN_SECONDS * 1000,
       lastJoinAt: this.now(),
       players: [{ id: user.id, name: displayName(user), cards: [] }],
@@ -269,7 +277,7 @@ export class PokerTable {
     await this.saveStats(stats);
 
     const game = {
-      chatId, messageId: null, phase: 'duel_wait', handNo,
+      chatId, threadId: this.threadId, messageId: null, phase: 'duel_wait', handNo,
       deadline: this.now() + DUEL_TIMEOUT_MS,
       targetUsername,
       players: [{ id: user.id, name: displayName(user), cards: [] }],
