@@ -4,7 +4,7 @@
 
 import { newDeck, cardsToString, evaluateBest, showdown, winChances } from './poker.js';
 
-export const BOT_VERSION = '2026.09.04-10';
+export const BOT_VERSION = '2026.09.04-11';
 
 export const JOIN_SECONDS = 30;
 export const IDLE_START_MS = 5000; // никто не вошёл 5 сек при ≥2 игроках — стартуем раньше
@@ -122,7 +122,8 @@ export class PokerTable {
     if (await this.isDuplicate(update.update_id)) return;
     // В форуме (супергруппа с темами) ответы должны идти в ту же тему,
     // откуда пришла команда/клик — иначе Telegram кладёт их в General.
-    this.threadId = update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id;
+    const incoming = update.message ?? update.callback_query?.message;
+    this.threadId = incoming?.chat?.is_forum === true ? incoming.message_thread_id : undefined;
 
     if (update.callback_query) {
       await this.handleCallback(update.callback_query);

@@ -302,9 +302,31 @@ await test('POST с секретом уходит в объект нужного
   assert.strictEqual(calls.pop().id, 'id:42:0');
 });
 await test('апдейт из темы форума уходит в свой изолированный объект', async () => {
-  const r = await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify({ update_id: 10, message: { chat: { id: 42 }, message_thread_id: 3332, text: '/x' } }) }), env);
+  const r = await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify({ update_id: 10, message: { chat: { id: 42, is_forum: true }, message_thread_id: 3332, text: '/x' } }) }), env);
   assert.strictEqual(r.status, 200);
   assert.strictEqual(calls.pop().id, 'id:42:3332', 'разные темы одного чата не должны делить состояние');
+});
+await test('в обычной группе message_thread_id у ответа игнорируется — команда и клик в одном объекте', async () => {
+  const hit = async body => {
+    await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify(body) }), env);
+    return calls.pop().id;
+  };
+  // /ludoman_spin отправили ответом на чьё-то сообщение — Telegram проставил тред
+  const fromCommand = await hit({ update_id: 11, message: { chat: { id: 77, type: 'supergroup' }, message_thread_id: 900, text: '/ludoman_spin' } });
+  // клик по кнопке приходит без треда
+  const fromClick = await hit({ update_id: 12, callback_query: { id: 'cb', data: 'j:1', from: { id: 5 }, message: { chat: { id: 77, type: 'supergroup' }, message_id: 3 } } });
+  assert.strictEqual(fromCommand, 'id:77:0');
+  assert.strictEqual(fromClick, fromCommand, 'иначе игрок не может зайти в игру');
+});
+await test('в форуме тред учитывается и у команды, и у клика', async () => {
+  const hit = async body => {
+    await worker.fetch(new Request('https://x/', { method: 'POST', headers: { 'X-Telegram-Bot-Api-Secret-Token': 's3cret' }, body: JSON.stringify(body) }), env);
+    return calls.pop().id;
+  };
+  const fromCommand = await hit({ update_id: 13, message: { chat: { id: 88, is_forum: true }, message_thread_id: 3332, text: '/ludoman_spin' } });
+  const fromClick = await hit({ update_id: 14, callback_query: { id: 'cb', data: 'j:1', from: { id: 5 }, message: { chat: { id: 88, is_forum: true }, message_thread_id: 3332, message_id: 3 } } });
+  assert.strictEqual(fromCommand, 'id:88:3332');
+  assert.strictEqual(fromClick, fromCommand);
 });
 
 console.log('\n' + (process.exitCode ? 'ЕСТЬ ОШИБКИ' : 'Все тесты прошли') + ': ' + passed);

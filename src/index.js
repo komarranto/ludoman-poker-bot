@@ -28,13 +28,15 @@ export default {
     } catch (err) {
       return new Response('bad json', { status: 400 });
     }
-    const chatId = update.message?.chat?.id ?? update.callback_query?.message?.chat?.id;
-    if (chatId === undefined) return new Response('ok');
-    // Форумы (супергруппы с темами) шлют message_thread_id — без него все темы
-    // одного чата делили бы одну игру и мешали друг другу.
-    const threadId = update.message?.message_thread_id ?? update.callback_query?.message?.message_thread_id ?? 0;
+    const message = update.message ?? update.callback_query?.message;
+    const chat = message?.chat;
+    if (chat?.id === undefined) return new Response('ok');
+    // Тему учитываем ТОЛЬКО в форумах. В обычной супергруппе Telegram тоже
+    // проставляет message_thread_id — у ответов на сообщения, — и тогда команда
+    // и клик по кнопке уезжали в разные объекты: игра «не видела» игроков.
+    const threadId = chat.is_forum === true ? (message.message_thread_id ?? 0) : 0;
 
-    const stub = env.TABLE.get(env.TABLE.idFromName(`${chatId}:${threadId}`));
+    const stub = env.TABLE.get(env.TABLE.idFromName(`${chat.id}:${threadId}`));
     await stub.fetch('https://table/update', { method: 'POST', body: JSON.stringify(update) });
     return new Response('ok');
   }
